@@ -1992,15 +1992,23 @@ fn done_manifest(db: &Db, queries: &[String]) -> Result<Vec<DoneTarget>> {
     if check_replay(db, key, &check)?.is_some() {
         return load();
     }
-    let targets: Vec<_> = queries
-        .iter()
-        .map(|query| DoneTarget {
+    let mut targets = Vec::with_capacity(queries.len());
+    for query in queries {
+        let task_uuid = match tasks::resolve(db, query) {
+            Ok(task) => Ok(task.id),
+            // A database fault says nothing about the task. Fail the run
+            // without binding the key, so the retry resolves again instead of
+            // replaying "connection pool: timed out" for good.
+            Err(e @ (ptask_core::Error::Sqlite(_) | ptask_core::Error::Pool(_))) => {
+                return Err(e.into());
+            }
+            Err(e) => Err(e.to_string()),
+        };
+        targets.push(DoneTarget {
             query: query.clone(),
-            task_uuid: tasks::resolve(db, query)
-                .map(|task| task.id)
-                .map_err(|e| e.to_string()),
-        })
-        .collect();
+            task_uuid,
+        });
+    }
     if let Err(error) = record(
         db,
         key,
