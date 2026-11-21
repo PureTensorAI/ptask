@@ -1964,6 +1964,60 @@ fn take_claimed_next(db: &Db, skip: &[String], lease_minutes: Option<i64>) -> Cl
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DoneTarget {
+    query: String,
+    task_uuid: std::result::Result<String, String>,
+}
+
+fn done_manifest(db: &Db, queries: &[String]) -> Result<Vec<DoneTarget>> {
+    use ptask_core::event_log::{ReplayCheck, check_replay, record};
+    let ctx = cli_ctx();
+    let key = ctx.event_uuid.as_deref().expect("keyed multi-task done");
+    let check = ReplayCheck {
+        actor: &ctx.actor,
+        task_uuid: None,
+        event_types: &["command.done_manifest"],
+        command: ctx.command.as_ref(),
+    };
+    let load = || -> Result<Vec<DoneTarget>> {
+        let payload: String = db.get()?.query_row(
+            "SELECT payload FROM pt_event_log WHERE uuid = ?1",
+            [key],
+            |r| r.get(0),
+        )?;
+        let payload: serde_json::Value = serde_json::from_str(&payload)?;
+        Ok(serde_json::from_value(payload["targets"].clone())?)
+    };
+    if check_replay(db, key, &check)?.is_some() {
+        return load();
+    }
+    let targets: Vec<_> = queries
+        .iter()
+        .map(|query| DoneTarget {
+            query: query.clone(),
+            task_uuid: tasks::resolve(db, query)
+                .map(|task| task.id)
+                .map_err(|e| e.to_string()),
+        })
+        .collect();
+    if let Err(error) = record(
+        db,
+        key,
+        None,
+        "command.done_manifest",
+        &serde_json::json!({"targets": targets}),
+        &ctx,
+    ) {
+        // A concurrent invocation may have bound this key first.
+        if check_replay(db, key, &check)?.is_some() {
+            return load();
+        }
+        return Err(error.into());
+    }
+    Ok(targets)
+}
+
 fn cmd_done(db: &Db, a: DoneArgs) -> Result<()> {
     let lease_minutes = if a.claim_next {
         a.lease
@@ -1975,13 +2029,25 @@ fn cmd_done(db: &Db, a: DoneArgs) -> Result<()> {
         None
     };
     let multi = a.queries.len() > 1;
+    let manifest = if multi && cli_idempotency_key().is_some() {
+        Some(done_manifest(db, &a.queries)?)
+    } else {
+        None
+    };
     let mut results = Vec::new();
     let mut failed = 0usize;
     let mut skip = Vec::new();
-    for query in &a.queries {
+    for (index, query) in a.queries.iter().enumerate() {
         // One task's failure (blocked, not found) no longer abandons the
         // rest of the list half-applied; every failure is reported.
-        let task = match tasks::resolve(db, query) {
+        let resolved = match &manifest {
+            Some(targets) => match &targets[index].task_uuid {
+                Ok(uuid) => tasks::resolve_for_lookup(db, uuid, true).map_err(|e| e.to_string()),
+                Err(error) => Err(error.clone()),
+            },
+            None => tasks::resolve(db, query).map_err(|e| e.to_string()),
+        };
+        let task = match resolved {
             Ok(t) => t,
             Err(e) => {
                 failed += 1;
