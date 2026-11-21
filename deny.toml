@@ -18,6 +18,12 @@ ignore = [
     # number_prefix 0.4.0: formats byte counts for indicatif 0.17, which
     # hf-hub 0.4.3 pins. Pure formatting, no I/O or unsafe surface we feed.
     { id = "RUSTSEC-2025-0119", reason = "unmaintained formatting helper via hf-hub -> indicatif 0.17; hf-hub pins it" },
+    # chrono 0.4.44: declared unmaintained 2026-11 (a notice, not a
+    # vulnerability). We do not depend on it; rmcp 3.9 and schemars 1.2 pull
+    # it in for date-time schema types, and neither has a release without it.
+    # Our own date handling is jiff. Review by 2027-02-21: drop this once
+    # rmcp/schemars move to jiff or time.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained notice; transitive via rmcp/schemars only, no release without it; review 2027-02-21" },
 
 ]
 
