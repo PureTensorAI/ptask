@@ -31,7 +31,11 @@ struct ListParams {
     status: Option<String>,
 }
 
+/// Unknown fields are refused. Serde drops a key it does not know, so a request that spelt
+/// the expiry `expires`, `expiry` or `ttl` used to create an approval that never expires
+/// (review finding F160, 2026-11-21). `expiresIn` is accepted as a spelling of `expires_in`.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CreateReq {
     kind: String,
     title: String,
@@ -47,7 +51,7 @@ struct CreateReq {
     payload_name: Option<String>,
     #[serde(default)]
     task: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "expiresIn")]
     expires_in: Option<String>,
 }
 
@@ -262,6 +266,33 @@ async fn decide(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unknown_field_is_refused_instead_of_dropping_the_expiry() {
+        let base = serde_json::json!({"kind": "other", "title": "t"});
+        for wrong in ["expires", "expiry", "ttl", "expires_at", "Expires_In"] {
+            let mut body = base.clone();
+            body[wrong] = serde_json::json!("1h");
+            assert!(
+                serde_json::from_value::<CreateReq>(body.clone()).is_err(),
+                "HTTP create accepted {wrong} and would have made an approval with no expiry"
+            );
+            assert!(
+                serde_json::from_value::<crate::mcp::ApprovalRequestArg>(body).is_err(),
+                "MCP approval_request accepted {wrong}"
+            );
+        }
+        for right in ["expires_in", "expiresIn"] {
+            let mut body = base.clone();
+            body[right] = serde_json::json!("1h");
+            let http: CreateReq = serde_json::from_value(body.clone()).unwrap();
+            assert_eq!(http.expires_in.as_deref(), Some("1h"));
+            let mcp: crate::mcp::ApprovalRequestArg = serde_json::from_value(body).unwrap();
+            assert_eq!(mcp.expires_in.as_deref(), Some("1h"));
+        }
+        let plain: CreateReq = serde_json::from_value(base).unwrap();
+        assert!(plain.expires_in.is_none());
+    }
 
     #[test]
     fn approval_refusals_are_conflicts_not_server_errors() {

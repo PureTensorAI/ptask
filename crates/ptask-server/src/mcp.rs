@@ -322,7 +322,9 @@ pub struct DigestArg {
     pub days: Option<i64>,
 }
 
+/// Unknown fields are refused: a misspelt expiry must not become "never expires" (F160).
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ApprovalRequestArg {
     /// email | ebay | spend | destroy | external | budget | other
     pub kind: String,
@@ -344,7 +346,7 @@ pub struct ApprovalRequestArg {
     pub payload_name: Option<String>,
     #[serde(default)]
     pub task: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "expiresIn")]
     pub expires_in: Option<String>,
 }
 
