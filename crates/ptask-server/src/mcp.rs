@@ -352,7 +352,7 @@ pub struct ApprovalRequestArg {
 
 #[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
 pub struct ApprovalListArg {
-    /// pending (default) | approved | rejected | withdrawn | expired | all
+    /// pending (default) | approved | rejected | withdrawn | expired | revoked | all
     #[serde(default)]
     pub status: Option<String>,
 }

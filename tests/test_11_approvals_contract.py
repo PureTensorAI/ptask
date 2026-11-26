@@ -451,6 +451,55 @@ def test_consume_is_one_shot(env, tmp_path):
     assert exit_of(env, "approval", "verify", ap["id"], "--payload-file", str(payload)) == 6
 
 
+def test_revoke_takes_back_a_granted_approval(env, tmp_path):
+    ap = request(env, tmp_path, "rv", "superseded bytes")
+    payload = tmp_path / "rv.html"
+    assert run(env, "approval", "revoke", ap["id"], "--note", "x", tty=True, check=False,
+               PTASK_ACTOR="operator").returncode == 4, "pending: reject instead"
+    dash_decide(env, "approve", ap["id"])
+    new = request(env, tmp_path, "rv2", "the re-filed bytes")
+    # Operator-only, as for decide: no agent shell, no non-TTY without --via, not the requester.
+    r = run(env, "approval", "revoke", ap["id"], "--note", "x", "--via", "dashboard", check=False,
+            PTASK_ACTOR="operator-dashboard", CLAUDECODE="1")
+    assert r.returncode != 0 and "operator" in (r.stdout + r.stderr).lower()
+    assert run(env, "approval", "revoke", ap["id"], "--note", "x", check=False, PTASK_ACTOR="operator").returncode != 0
+    assert run(env, "approval", "revoke", ap["id"], "--note", "x", "--via", "dashboard", check=False,
+               PTASK_ACTOR="hal").returncode != 0
+    assert run(env, "approval", "revoke", ap["id"], check=False, tty=True, PTASK_ACTOR="operator").returncode != 0, \
+        "the note is required"
+    assert show(env, ap["id"])["status"] == "approved"
+    run(env, "approval", "revoke", ap["id"], "--note", "scripts superseded", "--superseded-by", new["id"],
+        tty=True, PTASK_ACTOR="operator")
+    s = show(env, ap["id"])
+    assert s["status"] == "revoked" and s["revoked_by"] == "operator" and s["revoked_at"]
+    assert s["revoke_note"] == f"superseded by {new['id']}: scripts superseded"
+    assert s["decided_by"] == "operator-dashboard", "the decision itself is kept"
+    assert s["in_force"] is False and not s["consumed_at"]
+    assert any(e["type"] == "approval.revoked" for e in s["events"])
+    assert exit_of(env, "approval", "verify", ap["id"], "--payload-file", str(payload)) == 4
+    assert exit_of(env, "approval", "consume", ap["id"], "--payload-file", str(payload)) == 4
+    assert exit_of(env, "approval", "payload", ap["id"]) == 4
+    assert not show(env, ap["id"])["consumed_at"]
+    assert run(env, "approval", "revoke", ap["id"], "--note", "again", tty=True, check=False,
+               PTASK_ACTOR="operator").returncode == 4
+    assert [i["id"] for i in pj(env, "approval", "ls", "--status", "revoked")] == [ap["id"]]
+    uuid = s["uuid"]
+    with pytest.raises(sqlite3.DatabaseError):
+        with sqlite3.connect(env["PTASK_DB"]) as db:
+            db.execute("UPDATE approvals SET status = 'approved' WHERE id = ?", (uuid,))
+    assert show(env, ap["id"])["status"] == "revoked"
+
+
+def test_a_consumed_approval_cannot_be_revoked(env, tmp_path):
+    ap = request(env, tmp_path, "spent", "already used")
+    dash_decide(env, "approve", ap["id"])
+    assert exit_of(env, "approval", "consume", ap["id"], "--payload-file", str(tmp_path / "spent.html")) == 0
+    r = run(env, "approval", "revoke", ap["id"], "--note", "too late", "--via", "dashboard", check=False,
+            PTASK_ACTOR="operator-dashboard")
+    assert r.returncode == 6, r
+    assert show(env, ap["id"])["status"] == "approved"
+
+
 def test_consume_json_payload(env, tmp_path):
     obj = {"amount_gbp": 400, "to": "ACME Ltd"}
     ap = pj(env, "approval", "request", "--kind", "spend", "--title", "Pay", "--payload-json", json.dumps(obj))
@@ -622,6 +671,22 @@ def test_http_decide_requires_admin(server):
     assert call_api(base, "POST", f"/api/approvals/{ap['id']}/decide", t["operator-shared"], {"decision": "reject"})[0] == 409
 
 
+def test_http_revoke_requires_admin_and_a_note(server):
+    base, t = server
+    _, ap = create_via_http(base, t["hal"])
+    path = f"/api/approvals/{ap['id']}/revoke"
+    call_api(base, "POST", f"/api/approvals/{ap['id']}/decide", t["operator-shared"], {"decision": "approve"})
+    for who in ("hal", "nexus"):
+        code, _ = call_api(base, "POST", path, t[who], {"note": "stale"})
+        assert code in (401, 403), f"{who} (write scope) must not revoke"
+    assert call_api(base, "POST", path, t["operator-shared"], {})[0] in (400, 422)
+    assert call_api(base, "POST", path, t["operator-shared"], {"note": "x", "supersede": "AP-1"})[0] in (400, 422)
+    code, done = call_api(base, "POST", path, t["operator-shared"], {"note": "superseded"})
+    assert code == 200, done
+    assert done["status"] == "revoked" and done["revoked_by"] == "operator-shared" and done["in_force"] is False
+    assert call_api(base, "POST", path, t["operator-shared"], {"note": "again"})[0] == 409
+
+
 def test_http_withdraw_only_requester(server):
     base, t = server
     _, ap = create_via_http(base, t["hal"])
@@ -754,8 +819,8 @@ def test_mcp_can_request_but_has_no_decide_tool(env):
         names = [t["name"] for t in call({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]]
         for required in ("approval_request", "approval_list", "approval_status", "approval_withdraw"):
             assert required in names, names
-        leaky = [n for n in names if re.search(r"approve|reject|decide", n)]
-        assert leaky == [], f"agents must not be able to decide: {leaky}"
+        leaky = [n for n in names if re.search(r"approve|reject|decide|revoke", n)]
+        assert leaky == [], f"agents must not be able to decide or revoke: {leaky}"
         reply = call({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "approval_request", "arguments": {
             "kind": "external", "title": "Open AWS support case", "note": "quota", "payload_json": {"case": "raise g6 quota"}}}})
         assert "AP-" in json.dumps(reply["result"]), reply

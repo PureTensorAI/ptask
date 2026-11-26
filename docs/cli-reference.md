@@ -432,7 +432,7 @@ the release helper run it automatically.
 | `1` | runtime error (DB, network, parse, a refused mutation such as a blocked `pt done`) and any failure without a code below |
 | `2` | command-line usage error (clap) |
 | `3` | `pt approval verify` / `consume`: the approval is still pending. `pt distill`: `PTASK_LLM_BACKEND=gemini` without `GOOGLE_API_KEY` (nothing consumed) |
-| `4` | `pt approval verify` / `consume`: rejected, withdrawn or expired |
+| `4` | `pt approval verify` / `consume`: rejected, withdrawn, expired or revoked; `pt approval revoke`: the row is not approved |
 | `5` | `pt approval verify` / `consume`: payload digest mismatch (consume does not latch) |
 | `6` | `pt approval verify` / `consume`: already consumed |
 | `64` | usage error from `scripts/release.sh` and similar helpers |

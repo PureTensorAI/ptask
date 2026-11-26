@@ -380,7 +380,8 @@ fn authorise(chain: &[Record], claim: &Claim) -> Result<()> {
             // key holder can write this; it does not clear a consume that
             // has no matching void.
             "consume_void" => consumed = false,
-            "reject" | "withdraw" => {
+            // A revoke takes back a granted approval before consume.
+            "reject" | "withdraw" | "revoke" => {
                 approve.remove("a");
             }
             _ => {}

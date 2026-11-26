@@ -4599,6 +4599,9 @@ fn cmd_approval(db: &Db, c: approvals::ApprovalCommand) -> Result<()> {
         approvals::ApprovalCommand::Decide(a) => {
             approvals::cmd_long_decide(db, a, cli_ctx(), json_mode())
         }
+        approvals::ApprovalCommand::Revoke(a) => {
+            approvals::cmd_revoke(db, a, cli_ctx(), json_mode())
+        }
     }
 }
 
