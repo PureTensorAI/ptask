@@ -217,6 +217,9 @@ _pt() {
             pt__subcmd__approval,request)
                 cmd="pt__subcmd__approval__subcmd__request"
                 ;;
+            pt__subcmd__approval,revoke)
+                cmd="pt__subcmd__approval__subcmd__revoke"
+                ;;
             pt__subcmd__approval,show)
                 cmd="pt__subcmd__approval__subcmd__show"
                 ;;
@@ -249,6 +252,9 @@ _pt() {
                 ;;
             pt__subcmd__approval__subcmd__help,request)
                 cmd="pt__subcmd__approval__subcmd__help__subcmd__request"
+                ;;
+            pt__subcmd__approval__subcmd__help,revoke)
+                cmd="pt__subcmd__approval__subcmd__help__subcmd__revoke"
                 ;;
             pt__subcmd__approval__subcmd__help,show)
                 cmd="pt__subcmd__approval__subcmd__help__subcmd__show"
@@ -543,6 +549,9 @@ _pt() {
                 ;;
             pt__subcmd__help__subcmd__approval,request)
                 cmd="pt__subcmd__help__subcmd__approval__subcmd__request"
+                ;;
+            pt__subcmd__help__subcmd__approval,revoke)
+                cmd="pt__subcmd__help__subcmd__approval__subcmd__revoke"
                 ;;
             pt__subcmd__help__subcmd__approval,show)
                 cmd="pt__subcmd__help__subcmd__approval__subcmd__show"
@@ -1015,7 +1024,7 @@ _pt() {
             return 0
             ;;
         pt__subcmd__approval)
-            opts="-h --db --json --idempotency-key --color --no-color --help request list show payload withdraw verify consume expire notify decide help"
+            opts="-h --db --json --idempotency-key --color --no-color --help request list show payload withdraw verify consume expire notify decide revoke help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1139,7 +1148,7 @@ _pt() {
             return 0
             ;;
         pt__subcmd__approval__subcmd__help)
-            opts="request list show payload withdraw verify consume expire notify decide help"
+            opts="request list show payload withdraw verify consume expire notify decide revoke help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1251,6 +1260,20 @@ _pt() {
             return 0
             ;;
         pt__subcmd__approval__subcmd__help__subcmd__request)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        pt__subcmd__approval__subcmd__help__subcmd__revoke)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1429,6 +1452,44 @@ _pt() {
                     ;;
                 --expires-in)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --db)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --idempotency-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color)
+                    COMPREPLY=($(compgen -W "auto always never" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        pt__subcmd__approval__subcmd__revoke)
+            opts="-h --note --superseded-by --via --db --json --idempotency-key --color --no-color --help <ID>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --note)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --superseded-by)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --via)
+                    COMPREPLY=($(compgen -W "dashboard" -- "${cur}"))
                     return 0
                     ;;
                 --db)
@@ -2905,7 +2966,7 @@ _pt() {
             return 0
             ;;
         pt__subcmd__help__subcmd__approval)
-            opts="request list show payload withdraw verify consume expire notify decide"
+            opts="request list show payload withdraw verify consume expire notify decide revoke"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3003,6 +3064,20 @@ _pt() {
             return 0
             ;;
         pt__subcmd__help__subcmd__approval__subcmd__request)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        pt__subcmd__help__subcmd__approval__subcmd__revoke)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

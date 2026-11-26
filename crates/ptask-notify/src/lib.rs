@@ -541,6 +541,9 @@ mod tests {
             notified_at: None,
             consumed_at: None,
             consumed_by: None,
+            revoked_at: None,
+            revoked_by: None,
+            revoke_note: None,
         }
     }
 
@@ -607,6 +610,9 @@ mod tests {
             notified_at: None,
             consumed_at: None,
             consumed_by: None,
+            revoked_at: None,
+            revoked_by: None,
+            revoke_note: None,
         };
         let (text, _) = approval_telegram_message(&ap, None, false);
         assert!(telegram_units(&text) <= 4096, "{}", telegram_units(&text));
@@ -711,6 +717,9 @@ mod tests {
             notified_at: None,
             consumed_at: None,
             consumed_by: None,
+            revoked_at: None,
+            revoked_by: None,
+            revoke_note: None,
         };
         let (text, _) = approval_telegram_message(&ap, None, false);
         let rendered = text.replace("<b>", "").replace("</b>", "");

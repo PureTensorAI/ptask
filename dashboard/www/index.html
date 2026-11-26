@@ -323,6 +323,11 @@ button.chip{font-family:var(--font);cursor:pointer}
 .ap-rej{color:var(--p5t);border-color:var(--p5t)}
 .ap-rej:hover{background:rgba(255,59,92,.12);border-color:var(--p5t)}
 #approvals.has-pending .ct{color:var(--p4t);font-weight:800}
+/* granted approvals not yet consumed: the operator can take one back */
+.ap-granted{margin-top:12px}
+.ap-granted>summary{cursor:pointer;font-size:12px;color:var(--muted);font-weight:600;padding:4px 0}
+.ap-granted .ap-card{border-left-color:var(--accent)}
+.ap-granted .ap-list{margin-top:8px}
 
 .btn-done{
   margin-left:auto;cursor:pointer;background:transparent;border:1px solid var(--border);
@@ -1017,6 +1022,10 @@ button,[role="button"]{touch-action:manipulation}
   <section id="approvals">
     <div class="sec-h"><h2><svg class="ic" aria-hidden="true"><use href="#i-inbox"/></svg> Approvals</h2><div class="ln"></div><span class="ct" id="ap-ct"></span></div>
     <div class="ap-list" id="ap-list"><div class="ph">loading…</div></div>
+    <details class="ap-granted" id="ap-granted">
+      <summary id="ap-granted-sum">Approved, not used</summary>
+      <div class="ap-list" id="ap-granted-list"><div class="ph">loading…</div></div>
+    </details>
   </section>
 
   <section id="critical-sec">
@@ -1456,6 +1465,7 @@ document.addEventListener('click',e=>{
   else if(kind==='cap-edit'){ capEdit(); }
   else if(kind==='ap-approve'){ if(id) decideApproval(id,'approve'); }
   else if(kind==='ap-reject'){ if(id) decideApproval(id,'reject'); }
+  else if(kind==='ap-revoke'){ if(id) revokeApproval(id); }
 });
 
 /* ---- phone app shell (≤640px): one pane at a time behind the bottom tab
@@ -2362,9 +2372,76 @@ function renderApprovals(items){
     host.appendChild(card);
   });
 }
+/* Approved rows nobody has consumed yet. Revoking one is the only way to stop
+   it authorising anything; the reason is required and kept on the row. */
+function renderGranted(items){
+  const list=(Array.isArray(items)?items:[]).filter(it=>it&&it.status==='approved'&&!it.consumed_at);
+  const sum=$('#ap-granted-sum');
+  if(sum) sum.textContent='Approved, not used ('+list.length+')';
+  const host=$('#ap-granted-list'); if(!host) return;
+  const notes={};
+  host.querySelectorAll('.ap-card').forEach(c=>{
+    const inp=c.querySelector('.ap-note');
+    if(inp&&inp.value&&c.dataset.id) notes[c.dataset.id]=inp.value;
+  });
+  host.replaceChildren();
+  if(!list.length){
+    const ph=document.createElement('div');
+    ph.className='ph';
+    ph.textContent='no approved, unused approvals';
+    host.appendChild(ph);
+    return;
+  }
+  list.forEach(item=>{
+    const id=String(item.id||'');
+    const card=document.createElement('div');
+    card.className='ap-card';
+    card.dataset.id=id;
+    const hd=document.createElement('div');
+    hd.className='ap-hd';
+    const kind=document.createElement('span'); kind.className='ap-kind'; kind.textContent=item.kind||'';
+    const apid=document.createElement('span'); apid.className='ap-id'; apid.textContent=id;
+    const who=document.createElement('span'); who.className='ap-who'; who.textContent=item.requester||'';
+    const age=document.createElement('span'); age.className='age';
+    age.textContent='approved '+relTime(item.decided_at)+(item.in_force?'':' · expired');
+    hd.append(kind, apid, who, age);
+    const title=document.createElement('h3');
+    title.textContent=item.title||'';
+    const actions=document.createElement('div');
+    actions.className='ap-act';
+    const note=document.createElement('input');
+    note.className='ap-note';
+    note.type='text';
+    note.maxLength=2000;
+    note.placeholder='why take it back (required)';
+    note.setAttribute('aria-label','reason for revoking '+id);
+    if(notes[id]) note.value=notes[id];
+    const revoke=document.createElement('button');
+    revoke.type='button';
+    revoke.className='mbtn ap-rej';
+    revoke.dataset.act='ap-revoke';
+    revoke.textContent='Revoke';
+    actions.append(note, revoke);
+    card.append(hd, title, actions);
+    host.appendChild(card);
+  });
+}
 async function loadApprovals(force){
   const active=document.activeElement;
   if(!force && active && active.classList && active.classList.contains('ap-note')) return;
+  try{
+    const granted=await api('/api/approvals?status=approved');
+    renderGranted(Array.isArray(granted)?granted:[]);
+  }catch(e){
+    const host=$('#ap-granted-list');
+    if(host){
+      host.replaceChildren();
+      const ph=document.createElement('div');
+      ph.className='ph';
+      ph.textContent='approved list unavailable: '+(e.message||'error');
+      host.appendChild(ph);
+    }
+  }
   try{
     const data=await api('/api/approvals');
     renderApprovals(Array.isArray(data)?data:[]);
@@ -2409,6 +2486,33 @@ async function decideApproval(id, verb){
     }
     const word=verb==='approve'?'approved':'rejected';
     if(r.ok && j.ok) toast('\u2713 '+id+' '+word);
+    else toast('\u2717 '+(j.error||j.message||'failed'));
+    await loadApprovals(true);
+  }catch(e){
+    toast('\u2717 '+e.message);
+    if(card) card.querySelectorAll('button').forEach(b=>b.disabled=false);
+  }
+}
+
+async function revokeApproval(id){
+  const card=document.querySelector('#ap-granted-list .ap-card[data-id="'+CSS.escape(id)+'"]');
+  const noteEl=card&&card.querySelector('.ap-note');
+  const note=(noteEl?noteEl.value:'').trim();
+  if(!note){ toast('\u2717 say why '+id+' is taken back'); if(noteEl) noteEl.focus(); return; }
+  if(!window.confirm('Revoke '+id+'? It can never be consumed after this.')) return;
+  if(card) card.querySelectorAll('button').forEach(b=>b.disabled=true);
+  try{
+    let r=await postDecision(id, 'revoke', {note}, storedDecideToken());
+    let j=await r.json().catch(()=>({}));
+    if(r.status===403 && j.code==='decide_token_required'){
+      const entered=(window.prompt('Decide token (PTASK_DASH_DECIDE_TOKEN)')||'').trim();
+      if(entered){
+        r=await postDecision(id, 'revoke', {note}, entered);
+        j=await r.json().catch(()=>({}));
+        if(r.ok && j.ok){try{localStorage.setItem(DECIDE_KEY, entered);}catch(e){}}
+      }
+    }
+    if(r.ok && j.ok) toast('\u2713 '+id+' revoked');
     else toast('\u2717 '+(j.error||j.message||'failed'));
     await loadApprovals(true);
   }catch(e){

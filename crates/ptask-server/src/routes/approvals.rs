@@ -5,6 +5,7 @@
 //! POST /api/approvals              (write)
 //! POST /api/approvals/{id}/withdraw (write; requester only)
 //! POST /api/approvals/{id}/decide  (admin)
+//! POST /api/approvals/{id}/revoke  (admin; approved and unconsumed only)
 
 use crate::AppState;
 use axum::Router;
@@ -23,6 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/approvals/{id}", get(get_one))
         .route("/api/approvals/{id}/withdraw", post(withdraw))
         .route("/api/approvals/{id}/decide", post(decide))
+        .route("/api/approvals/{id}/revoke", post(revoke))
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +55,16 @@ struct CreateReq {
     task: Option<String>,
     #[serde(default, alias = "expiresIn")]
     expires_in: Option<String>,
+}
+
+/// Unknown fields are refused, as for create: a misspelt `superseded_by`
+/// must not silently drop the link to the replacement.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RevokeReq {
+    note: String,
+    #[serde(default, alias = "supersededBy")]
+    superseded_by: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,6 +266,34 @@ async fn decide(
             decision,
             DecidedVia::Api,
             req.note.as_deref(),
+            &ctx,
+        ) {
+            Ok(ap) => Json(ap.to_json(None)).into_response(),
+            Err(e) => err_resp(e),
+        }
+    })
+    .await
+}
+
+async fn revoke(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<RevokeReq>,
+) -> impl IntoResponse {
+    crate::blocking::db_response(move || {
+        let identity =
+            match crate::auth::authenticate(&state.db, &state.auth, &headers, Scope::Admin) {
+                Ok(id) => id,
+                Err(resp) => return resp,
+            };
+        let ctx = ctx_for(&identity.client_id, "api");
+        match approvals::revoke(
+            &state.db,
+            &id,
+            DecidedVia::Api,
+            &req.note,
+            req.superseded_by.as_deref(),
             &ctx,
         ) {
             Ok(ap) => Json(ap.to_json(None)).into_response(),

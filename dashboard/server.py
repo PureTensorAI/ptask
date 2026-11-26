@@ -36,6 +36,10 @@ Endpoints
   POST /api/approvals/AP-n/approve|reject {note?}
                                 -> `pt approve|reject AP-n --via dashboard [--note=]`
                                    (needs X-PTask-Decide-Token; see below)
+  POST /api/approvals/AP-n/revoke {note, superseded_by?}
+                                -> `pt approval revoke AP-n --via dashboard --note=
+                                   [--superseded-by=]`: takes back an approved,
+                                   unconsumed approval (needs X-PTask-Decide-Token)
   POST /api/voice  (raw audio body) -> Whisper STT + Bedrock Claude draft
                                 -> {transcript, fields:{title,description,priority,
                                    deadline,labels,domain,reason}} for the
@@ -247,7 +251,7 @@ _ID_RE = re.compile(r"^(PT-\d+|[0-9a-fA-F-]{8,36})$")
 _AP_ID_RE = re.compile(r"^AP-[0-9]+$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 APPROVAL_STATUSES = frozenset({
-    "pending", "approved", "rejected", "withdrawn", "expired", "all",
+    "pending", "approved", "rejected", "withdrawn", "expired", "revoked", "all",
 })
 APPROVAL_NOTE_MAX = 2000
 # Task notes and closure evidence: pt's own cap (ptask_core::notes).
@@ -1012,6 +1016,24 @@ def pt_decide(verb: str, ap_id: str, note: str | None) -> tuple[bool, str, int |
         return False, f"exec error: {e}", None
 
 
+def pt_revoke(ap_id: str, note: str, superseded_by: str | None) -> tuple[bool, str, int | None]:
+    # `--note=` keeps a note that starts with "-" from being read as a flag.
+    args = ["approval", "revoke", ap_id, "--via", "dashboard", f"--note={note}"]
+    if superseded_by is not None:
+        args.append(f"--superseded-by={superseded_by}")
+    actor = os.environ.get("PTASK_ACTOR") or "dashboard"
+    try:
+        out = subprocess.run(
+            [PT_BIN, *args], capture_output=True, text=True, timeout=20,
+            env=_pt_dashboard_env(actor=actor),
+        )
+        if out.returncode == 0:
+            return True, (out.stdout + out.stderr).strip(), 0
+        return False, _pt_message(out.stderr or out.stdout) or "pt failed", out.returncode
+    except Exception as e:  # noqa: BLE001
+        return False, f"exec error: {e}", None
+
+
 # ------------------------------------------------------------------------ voice
 # {domain_clause} is filled by voice_system_prompt from PTASK_DASH_DOMAINS so a
 # second tenant is not still asked to pick eng/mgmt.
@@ -1656,6 +1678,36 @@ class Handler(BaseHTTPRequestHandler):
                     "message": f"{msg}. The cockpit cannot force this: approve from the "
                                f"CLI with `pt approve {ap_id} --force` after inspecting.",
                 }, 409)
+            return self._json({"ok": False, "message": msg}, 409)
+
+        m = re.match(r"^/api/approvals/([^/]+)/revoke$", u.path)
+        if m:
+            ap_id = m.group(1)
+            if not _AP_ID_RE.fullmatch(ap_id):
+                return self._json({"error": "bad id"}, 400)
+            refusal = self._decide_refusal(
+                what="approval revokes",
+                fallback="revoke with `pt approval revoke AP-n --note=...` at a terminal",
+            )
+            if refusal is not None:
+                code, message = refusal
+                return self._json({"ok": False, "code": code, "error": message}, 403)
+            note = body.get("note")
+            if not isinstance(note, str) or not note.strip() or len(note) > APPROVAL_NOTE_MAX:
+                return self._json(
+                    {"error": "note is required: why the approval is taken back (max 2000)"}, 400
+                )
+            superseded_by = body.get("superseded_by")
+            if superseded_by is not None and (
+                not isinstance(superseded_by, str) or not _AP_ID_RE.fullmatch(superseded_by)
+            ):
+                return self._json({"error": "superseded_by must be AP-n"}, 400)
+            ok, msg, rc = pt_revoke(ap_id, note, superseded_by)
+            if ok:
+                return self._json({"ok": True, "message": msg})
+            if rc is None:
+                return self._json({"ok": False, "message": msg}, 500)
+            # 4: not approved (pending, rejected, expired, revoked); 6: consumed.
             return self._json({"ok": False, "message": msg}, 409)
 
         m = re.match(r"^/api/tasks/([^/]+)/done$", u.path)

@@ -35,6 +35,9 @@ fn pending_with(payload: &str) -> Approval {
         notified_at: None,
         consumed_at: None,
         consumed_by: None,
+        revoked_at: None,
+        revoked_by: None,
+        revoke_note: None,
     }
 }
 

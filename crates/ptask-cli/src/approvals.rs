@@ -55,6 +55,9 @@ pub enum ApprovalCommand {
     Notify,
     /// Approve or reject a pending request (operator only).
     Decide(LongDecideArgs),
+    /// Take back an approved, unconsumed approval (operator only). It
+    /// becomes `revoked`; verify, consume and payload refuse it (exit 4).
+    Revoke(RevokeArgs),
 }
 
 #[derive(Args, Debug)]
@@ -95,7 +98,7 @@ pub struct RequestArgs {
 
 #[derive(Args, Debug)]
 pub struct ListArgs {
-    /// pending (default) | approved | rejected | withdrawn | expired | all
+    /// pending (default) | approved | rejected | withdrawn | expired | revoked | all
     #[arg(long = "status", default_value = "pending")]
     pub status: String,
 }
@@ -153,6 +156,21 @@ pub struct DecideArgs {
     /// AP-n | cat -v` first).
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RevokeArgs {
+    /// AP-n (or the row uuid).
+    pub id: String,
+    /// Why the approval is taken back (required; shown on the row).
+    #[arg(long)]
+    pub note: String,
+    /// The approval that replaces this one (AP-n), recorded with the note.
+    #[arg(long = "superseded-by")]
+    pub superseded_by: Option<String>,
+    /// Record via=dashboard (also allows a non-TTY stdin).
+    #[arg(long = "via")]
+    pub via: Option<ViaChoice>,
 }
 
 #[derive(Args, Debug)]
@@ -238,7 +256,7 @@ fn print_human(ap: &approvals::Approval, events: Option<&[approvals::ApprovalEve
         ui::outcome(
             match ap.status.as_str() {
                 "approved" => ui::Status::Ok,
-                "rejected" | "expired" | "withdrawn" => ui::Status::Bad,
+                "rejected" | "expired" | "withdrawn" | "revoked" => ui::Status::Bad,
                 _ => ui::Status::Busy,
             },
             &ap.status,
@@ -274,6 +292,12 @@ fn print_human(ap: &approvals::Approval, events: Option<&[approvals::ApprovalEve
     }
     if let Some(d) = &ap.decided_by {
         pairs.push(("decided by", d.into()));
+    }
+    if let Some(r) = &ap.revoked_by {
+        pairs.push(("revoked by", r.into()));
+    }
+    if let Some(n) = &ap.revoke_note {
+        pairs.push(("revoke note", n.into()));
     }
     for l in ui::kv(&pairs, 16) {
         println!("    {}", l.trim_start());
@@ -557,6 +581,30 @@ pub fn cmd_decide(
         }
         map_core(e)
     })?;
+    emit_one(ap, None, json)
+}
+
+/// Same operator guardrails as `decide` (no CLAUDECODE; an operator TTY or
+/// `--via dashboard`). A row that is not approved reports its state with
+/// exit 4 and a consumed one exit 6, as verify/consume do.
+pub fn cmd_revoke(db: &Db, a: RevokeArgs, ctx: EventCtx, json: bool) -> Result<()> {
+    let via = decide_guardrails(matches!(a.via, Some(ViaChoice::Dashboard)))?;
+    let ap = approvals::revoke(db, &a.id, via, &a.note, a.superseded_by.as_deref(), &ctx).map_err(
+        |e| {
+            let terminal = matches!(
+                &e,
+                ptask_core::Error::Approval(approvals::ApprovalError::Conflict(_))
+            ) && approvals::get(db, &a.id).is_ok_and(|ap| ap.status != "approved");
+            if terminal {
+                return ExitCodeError {
+                    code: 4,
+                    message: e.to_string(),
+                }
+                .into();
+            }
+            map_core(e)
+        },
+    )?;
     emit_one(ap, None, json)
 }
 

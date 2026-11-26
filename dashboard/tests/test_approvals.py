@@ -46,6 +46,9 @@ if "approval" in args and "ls" in args:
 if args[:2] in (["approve", "AP-8"], ["reject", "AP-8"]):
     print("error: AP-8 is already approved", file=sys.stderr)
     sys.exit(1)
+if args[:3] == ["approval", "revoke", "AP-8"]:
+    print("error: AP-8 is consumed", file=sys.stderr)
+    sys.exit(6)
 if args[:2] == ["approve", "AP-9"]:
     # pt's refusal of a flagged payload preview, exactly as it prints it.
     print("  \u2716 ERROR   AP-9: the payload preview has control, bidi or invisible "
@@ -232,11 +235,62 @@ class ApprovalsPanelTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertIn("already approved", json.dumps(data))
 
+    # ---------------------------------------------------------------- revoke
+    def test_revoke_calls_pt_with_note_via_and_superseded_by(self):
+        status, data = self.request("POST", "/api/approvals/AP-7/revoke",
+                                    {"note": "-superseded", "superseded_by": "AP-12"})
+        self.assertEqual(status, 200, data)
+        self.assertEqual(self.calls()[-1]["args"], [
+            "approval", "revoke", "AP-7", "--via", "dashboard",
+            "--note=-superseded", "--superseded-by=AP-12",
+        ])
+        call = self.calls()[-1]
+        self.assertEqual(call["actor"], "dashboard")
+        self.assertIsNone(call["claudecode"])
+
+    def test_revoke_needs_the_operator_token(self):
+        for origin in ("self", None):
+            status, data = self.request("POST", "/api/approvals/AP-7/revoke", {"note": "x"},
+                                        origin=origin, token=None)
+            self.assertEqual(status, 403, data)
+            self.assertEqual(data["code"], "decide_token_required")
+        server.DECIDE_TOKEN = ""
+        status, data = self.request("POST", "/api/approvals/AP-7/revoke", {"note": "x"}, token=None)
+        self.assertEqual(status, 403, data)
+        self.assertEqual(data["code"], "decide_disabled")
+        self.assertIn("pt approval revoke", data["error"])
+        self.assertEqual(self.calls(), [])
+
+    def test_revoke_validates_before_exec(self):
+        for body in ({}, {"note": ""}, {"note": "   "}, {"note": 5}, {"note": "x" * 2001},
+                     {"note": "ok", "superseded_by": "PT-1"},
+                     {"note": "ok", "superseded_by": "AP-1;rm"},
+                     {"note": "ok", "superseded_by": 12}):
+            status, _ = self.request("POST", "/api/approvals/AP-7/revoke", body)
+            self.assertEqual(status, 400, body)
+        status, _ = self.request("POST", "/api/approvals/ap-7/revoke", {"note": "x"})
+        self.assertIn(status, (400, 404))
+        self.assertEqual(self.calls(), [])
+
+    def test_revoke_refusal_surfaces_as_conflict(self):
+        status, data = self.request("POST", "/api/approvals/AP-8/revoke", {"note": "late"})
+        self.assertEqual(status, 409, data)
+        self.assertIn("consumed", json.dumps(data))
+
+    def test_revoked_is_a_listable_status(self):
+        status, _ = self.request("GET", "/api/approvals?status=revoked", origin=None)
+        self.assertEqual(status, 200)
+        args = self.calls()[-1]["args"]
+        self.assertEqual(args[args.index("--status") + 1], "revoked")
+
     # ---------------------------------------------------------------- UI
     def test_index_has_approvals_panel(self):
         html = (Path(server.__file__).parent / "www" / "index.html").read_text()
         self.assertIn('id="approvals"', html)
         self.assertIn("/api/approvals", html)
+        self.assertIn('id="ap-granted"', html)
+        self.assertIn("/api/approvals?status=approved", html)
+        self.assertIn("ap-revoke", html)
 
 
 if __name__ == "__main__":

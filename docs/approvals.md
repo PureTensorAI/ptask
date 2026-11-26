@@ -12,15 +12,19 @@ tasks mint `PT-<n>`.
 | Role | Who | What they may do |
 |---|---|---|
 | Requester | any write-capable actor (`$PTASK_ACTOR`, HTTP `client_id`, MCP actor) | `request`, `withdraw` (own pending rows), `list`/`show` |
-| Operator | a human at a TTY, the dashboard sidecar holding `PTASK_DASH_DECIDE_TOKEN`, Telegram (operator chat, with `PTASK_TG_APPROVAL_BUTTONS=1`), or an **admin** HTTP token | `approve` / `reject` / `decide`, `payload --any-status` (inspect) |
+| Operator | a human at a TTY, the dashboard sidecar holding `PTASK_DASH_DECIDE_TOKEN`, Telegram (operator chat, with `PTASK_TG_APPROVAL_BUTTONS=1`), or an **admin** HTTP token | `approve` / `reject` / `decide`, `revoke` (take back an approved, unconsumed row), `payload --any-status` (inspect) |
 | Executor | a script or agent holding the approved bytes | `payload` → act → `consume` |
 
 A request is pending until it is approved, rejected, withdrawn, or expired.
-Decisions are immutable. The SQLite triggers on `approvals` refuse:
+An approved row that has not been consumed can be **revoked** by the
+operator (see Revoke). Decisions are immutable. The SQLite triggers on
+`approvals` refuse:
 
 - any change to `digest`, `payload`, or `payload_kind` after insert
-- any change to a non-pending row except the one-time consume latch
-  (`consumed_at` / `consumed_by` NULL → a value, and only on an **approved** row)
+- any change to a non-pending row except, on an **approved, unconsumed**
+  row, either the one-time consume latch (`consumed_at` / `consumed_by`
+  NULL → a value) or the one-time revoke (`status` → `revoked` with
+  `revoked_at` / `revoked_by` / `revoke_note` set). Revoked rows are frozen.
 
 `notified_at` may still be set while the row is pending.
 
@@ -104,7 +108,7 @@ pt approval consume AP-12 --payload-file /tmp/letter.html
 
 `payload` releases the bytes only while the approval is **in force**:
 approved, not past `expires_at`, not yet consumed. Otherwise it writes
-nothing to stdout and exits 3 (pending), 4 (rejected / withdrawn / expired)
+nothing to stdout and exits 3 (pending), 4 (rejected / withdrawn / expired / revoked)
 or 6 (already consumed). A digest-only request has no bytes to release
 (exit 1). With `PTASK_APPROVAL_JOURNAL=enforce`, `payload` and `verify`
 also require the same unconsumed journaled `approve` as `consume` (exit
@@ -148,7 +152,7 @@ approved executor will see them.
 |---|---|
 | 0 | approved, digest matches, not yet consumed (consume then latches) |
 | 3 | pending |
-| 4 | rejected / withdrawn / expired, or approved or pending but past `expires_at` |
+| 4 | rejected / withdrawn / expired / revoked, or approved or pending but past `expires_at` |
 | 5 | digest mismatch (consume does **not** latch) |
 | 6 | already consumed |
 | 1 | anything else (unknown id, bad args) |
@@ -196,6 +200,34 @@ Local CLI (`pt approve` / `pt reject` / `pt approval decide`):
   an email body needs no `--force`, while a second selector in a run, any
   other selector, a ZWJ sequence such as a family emoji (👨‍👩‍👧) — the
   preview never keeps joiners — or a soft hyphen still does.
+
+## Revoke
+
+Once granted, an approval used to stay consumable until it was consumed or
+expired; the only way to retire one whose payload had been superseded was to
+spend it with an unused `consume`. `revoke` takes it back instead:
+
+```sh
+pt approval revoke AP-145 --note "pre-review scripts" --superseded-by AP-178
+```
+
+- Only an **approved, unconsumed** row can be revoked, expired or not. A
+  pending request is rejected (operator) or withdrawn (requester) instead;
+  a consumed one is spent (exit 6); any other status exits 4.
+- `--note` is required and kept on the row (`revoke_note`, prefixed with
+  `superseded by AP-n:` when `--superseded-by` names an existing other row).
+  `revoked_by` / `revoked_at` record who and when. The decision fields stay
+  as decided.
+- After a revoke, `in_force` is false and `payload`, `verify` and `consume`
+  exit 4. In enforce mode the journal records a `revoke` that cancels the
+  `approve`, so a row edited back to `approved` in SQLite still fails with 7.
+- Operator only, with the same guardrails as `decide`: refused under
+  `CLAUDECODE`, needs an operator TTY or `--via dashboard`, and the
+  requester cannot revoke their own request. HTTP
+  `POST /api/approvals/{id}/revoke` `{note, superseded_by?}` needs **admin**
+  scope. The dashboard's inbox lists approved, unused rows under
+  "Approved, not used", each with a Revoke button behind the decide token.
+  No MCP tool can revoke.
 
 HTTP `POST /api/approvals/{id}/decide` requires **admin** scope;
 `decided_via=api`. Write-scope tokens may request and withdraw (own rows
@@ -298,7 +330,8 @@ pt approval consume AP-12 --payload-file letter.html
 ```
 
 HTTP: `GET/POST /api/approvals`, `GET /api/approvals/{id}`,
-`POST /api/approvals/{id}/withdraw`, `POST /api/approvals/{id}/decide`.
+`POST /api/approvals/{id}/withdraw`, `POST /api/approvals/{id}/decide`,
+`POST /api/approvals/{id}/revoke`.
 
 ## Threat model
 
@@ -321,7 +354,7 @@ The table alone cannot show that an `approved` row came from the operator:
 whoever can write the SQLite file can insert one. An optional off-database
 journal closes that. It is an append-only JSONL file with an HMAC-SHA256
 hash chain (each record's MAC covers the previous MAC and the record's
-fields). `request`, `approve`, `reject`, `withdraw` and `consume` each append
+fields). `request`, `approve`, `reject`, `withdraw`, `revoke` and `consume` each append
 a record before the row change commits. The journal is not inside SQLite, so
 a `consume` line is written before `commit`. If that transaction then rolls
 back (the event insert hits a used idempotency key, or the commit fails),

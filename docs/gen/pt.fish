@@ -868,25 +868,26 @@ complete -c pt -n "__fish_pt_using_subcommand token; and __fish_seen_subcommand_
 complete -c pt -n "__fish_pt_using_subcommand token; and __fish_seen_subcommand_from help" -f -a "list" -d 'List all tokens (client, scope, created/last-used/revoked)'
 complete -c pt -n "__fish_pt_using_subcommand token; and __fish_seen_subcommand_from help" -f -a "revoke" -d 'Revoke every active token for a client id'
 complete -c pt -n "__fish_pt_using_subcommand token; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -l db -d 'Override the SQLite path (default: $PTASK_DB or ~/puretensor-tasks/tasks.db)' -r
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -l idempotency-key -d 'Idempotency key recorded with the mutation\'s event — a retried command with the same key returns ok without re-applying' -r
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -l color -d 'Colour: auto (TTY only; honours NO_COLOR and PT_COLOR=always|never), always, or never' -r -f -a "auto\t''
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -l db -d 'Override the SQLite path (default: $PTASK_DB or ~/puretensor-tasks/tasks.db)' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -l idempotency-key -d 'Idempotency key recorded with the mutation\'s event — a retried command with the same key returns ok without re-applying' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -l color -d 'Colour: auto (TTY only; honours NO_COLOR and PT_COLOR=always|never), always, or never' -r -f -a "auto\t''
 always\t''
 never\t''"
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -l json -d 'Emit machine-readable JSON instead of human text (task-facing verbs)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -l no-color -d 'Plain output — shorthand for `--color never`'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -s h -l help -d 'Print help'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "request" -d 'Request operator approval for an exact payload'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "list" -d 'List approvals (default: pending, oldest first)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "show" -d 'Show one approval, including journal events'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "payload" -d 'Write the approved payload bytes to stdout (exit 3/4/6 unless the approval is in force; see verify)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "withdraw" -d 'Withdraw a pending request (requester only)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "verify" -d 'Check that an approval is approved and the payload still matches'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "consume" -d 'Verify and latch the approval as consumed (exactly once)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "expire" -d 'Mark pending rows past expires_at as expired'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "notify" -d 'Send Telegram pings for pending un-notified requests'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "decide" -d 'Approve or reject a pending request (operator only)'
-complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -l json -d 'Emit machine-readable JSON instead of human text (task-facing verbs)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -l no-color -d 'Plain output — shorthand for `--color never`'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -s h -l help -d 'Print help'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "request" -d 'Request operator approval for an exact payload'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "list" -d 'List approvals (default: pending, oldest first)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "show" -d 'Show one approval, including journal events'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "payload" -d 'Write the approved payload bytes to stdout (exit 3/4/6 unless the approval is in force; see verify)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "withdraw" -d 'Withdraw a pending request (requester only)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "verify" -d 'Check that an approval is approved and the payload still matches'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "consume" -d 'Verify and latch the approval as consumed (exactly once)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "expire" -d 'Mark pending rows past expires_at as expired'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "notify" -d 'Send Telegram pings for pending un-notified requests'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "decide" -d 'Approve or reject a pending request (operator only)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "revoke" -d 'Take back an approved, unconsumed approval (operator only). It becomes `revoked`; verify, consume and payload refuse it (exit 4)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and not __fish_seen_subcommand_from request list show payload withdraw verify consume expire notify decide revoke help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -l kind -d 'email | ebay | spend | destroy | external | budget | other' -r
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -l title -d 'Short operator-facing title' -r
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -l note -d 'Requester\'s note (always labelled as such; never mixed into preview)' -r
@@ -904,7 +905,7 @@ never\t''"
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -l json -d 'Emit machine-readable JSON instead of human text (task-facing verbs)'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -l no-color -d 'Plain output — shorthand for `--color never`'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from request" -s h -l help -d 'Print help'
-complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from list" -l status -d 'pending (default) | approved | rejected | withdrawn | expired | all' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from list" -l status -d 'pending (default) | approved | rejected | withdrawn | expired | revoked | all' -r
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from list" -l db -d 'Override the SQLite path (default: $PTASK_DB or ~/puretensor-tasks/tasks.db)' -r
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from list" -l idempotency-key -d 'Idempotency key recorded with the mutation\'s event — a retried command with the same key returns ok without re-applying' -r
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from list" -l color -d 'Colour: auto (TTY only; honours NO_COLOR and PT_COLOR=always|never), always, or never' -r -f -a "auto\t''
@@ -987,6 +988,17 @@ complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcomma
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from decide" -l json -d 'Emit machine-readable JSON instead of human text (task-facing verbs)'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from decide" -l no-color -d 'Plain output — shorthand for `--color never`'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from decide" -s h -l help -d 'Print help'
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l note -d 'Why the approval is taken back (required; shown on the row)' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l superseded-by -d 'The approval that replaces this one (AP-n), recorded with the note' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l via -d 'Record via=dashboard (also allows a non-TTY stdin)' -r -f -a "dashboard\t''"
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l db -d 'Override the SQLite path (default: $PTASK_DB or ~/puretensor-tasks/tasks.db)' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l idempotency-key -d 'Idempotency key recorded with the mutation\'s event — a retried command with the same key returns ok without re-applying' -r
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l color -d 'Colour: auto (TTY only; honours NO_COLOR and PT_COLOR=always|never), always, or never' -r -f -a "auto\t''
+always\t''
+never\t''"
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l json -d 'Emit machine-readable JSON instead of human text (task-facing verbs)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -l no-color -d 'Plain output — shorthand for `--color never`'
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from revoke" -s h -l help -d 'Print help'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "request" -d 'Request operator approval for an exact payload'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "list" -d 'List approvals (default: pending, oldest first)'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "show" -d 'Show one approval, including journal events'
@@ -997,6 +1009,7 @@ complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcomma
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "expire" -d 'Mark pending rows past expires_at as expired'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "notify" -d 'Send Telegram pings for pending un-notified requests'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "decide" -d 'Approve or reject a pending request (operator only)'
+complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "revoke" -d 'Take back an approved, unconsumed approval (operator only). It becomes `revoked`; verify, consume and payload refuse it (exit 4)'
 complete -c pt -n "__fish_pt_using_subcommand approval; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c pt -n "__fish_pt_using_subcommand goal; and not __fish_seen_subcommand_from add ls show link unlink set-parent done abandon orphans help" -l db -d 'Override the SQLite path (default: $PTASK_DB or ~/puretensor-tasks/tasks.db)' -r
 complete -c pt -n "__fish_pt_using_subcommand goal; and not __fish_seen_subcommand_from add ls show link unlink set-parent done abandon orphans help" -l idempotency-key -d 'Idempotency key recorded with the mutation\'s event — a retried command with the same key returns ok without re-applying' -r
@@ -1241,6 +1254,7 @@ complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_f
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from approval" -f -a "expire" -d 'Mark pending rows past expires_at as expired'
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from approval" -f -a "notify" -d 'Send Telegram pings for pending un-notified requests'
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from approval" -f -a "decide" -d 'Approve or reject a pending request (operator only)'
+complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from approval" -f -a "revoke" -d 'Take back an approved, unconsumed approval (operator only). It becomes `revoked`; verify, consume and payload refuse it (exit 4)'
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from goal" -f -a "add" -d 'Create a goal'
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from goal" -f -a "ls" -d 'List goals in tree order (parent before children, siblings by seq)'
 complete -c pt -n "__fish_pt_using_subcommand help; and __fish_seen_subcommand_from goal" -f -a "show" -d 'Show one goal: ancestors, children, tasks, subtree rollup'

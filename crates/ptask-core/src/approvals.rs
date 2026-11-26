@@ -29,8 +29,15 @@ pub const MAX_NAME_CHARS: usize = 255;
 const KINDS: &[&str] = &[
     "email", "ebay", "spend", "destroy", "external", "budget", "other",
 ];
-const STATUSES: &[&str] = &["pending", "approved", "rejected", "withdrawn", "expired"];
-const TERMINAL: &[&str] = &["rejected", "withdrawn", "expired"];
+const STATUSES: &[&str] = &[
+    "pending",
+    "approved",
+    "rejected",
+    "withdrawn",
+    "expired",
+    "revoked",
+];
+const TERMINAL: &[&str] = &["rejected", "withdrawn", "expired", "revoked"];
 
 /// Domain errors for the approval inbox. CLI maps a subset to process exit
 /// codes 3..=6; everything else is a generic failure.
@@ -201,6 +208,11 @@ pub struct Approval {
     pub notified_at: Option<String>,
     pub consumed_at: Option<String>,
     pub consumed_by: Option<String>,
+    /// Set only on a `revoked` row: the operator took the approval back
+    /// before it was consumed.
+    pub revoked_at: Option<String>,
+    pub revoked_by: Option<String>,
+    pub revoke_note: Option<String>,
 }
 
 impl Approval {
@@ -262,6 +274,9 @@ impl Approval {
             "notified_at": self.notified_at,
             "consumed_at": self.consumed_at,
             "consumed_by": self.consumed_by,
+            "revoked_at": self.revoked_at,
+            "revoked_by": self.revoked_by,
+            "revoke_note": self.revoke_note,
         });
         if let Some(events) = events {
             v["events"] = serde_json::to_value(events).unwrap_or(serde_json::Value::Array(vec![]));
@@ -805,7 +820,8 @@ const SELECT_SQL: &str = "SELECT a.id, a.seq, a.kind, a.title, a.request_note,
        a.digest, a.requester, a.task_uuid, t.pt_id, a.status,
        a.decided_by, a.decided_via, a.decision_note,
        a.created_at, a.decided_at, a.expires_at, a.notified_at,
-       a.consumed_at, a.consumed_by
+       a.consumed_at, a.consumed_by,
+       a.revoked_at, a.revoked_by, a.revoke_note
 FROM approvals a
 LEFT JOIN tasks t ON t.id = a.task_uuid";
 
@@ -835,6 +851,9 @@ fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Approval> {
         notified_at: r.get(21)?,
         consumed_at: r.get(22)?,
         consumed_by: r.get(23)?,
+        revoked_at: r.get(24)?,
+        revoked_by: r.get(25)?,
+        revoke_note: r.get(26)?,
     })
 }
 
@@ -1352,6 +1371,112 @@ pub fn withdraw(db: &Db, id: &str, ctx: &EventCtx) -> Result<Approval> {
     )?;
     if let Some(j) = Journal::from_env() {
         j.append("withdraw", &claim_of(&current), actor, &now)?;
+    }
+    tx.commit()?;
+    get(db, &current.uuid)
+}
+
+/// Take back a granted approval before it is consumed (operator only).
+///
+/// Moves an `approved`, unconsumed row to the terminal status `revoked`,
+/// whatever its expiry, recording who revoked it, when and why. From then on
+/// `in_force` is false and `payload`, `verify` and `consume` refuse it as
+/// terminal (exit 4). In enforce mode the journal records the revoke, which
+/// cancels its approve, so a row edited back to `approved` in SQLite still
+/// does not verify.
+///
+/// `superseded_by`, when given, names the approval that replaces this one.
+/// It is recorded in the event and the note, and must name another existing
+/// row. Refuses pending rows (reject or withdraw those), consumed rows (spent:
+/// nothing is left to revoke), and rejected, withdrawn, expired or already
+/// revoked rows. As with `decide`, the requester cannot revoke their own
+/// request: revoking is the operator's decision.
+pub fn revoke(
+    db: &Db,
+    id: &str,
+    via: DecidedVia,
+    note: &str,
+    superseded_by: Option<&str>,
+    ctx: &EventCtx,
+) -> Result<Approval> {
+    let actor = ctx.actor.trim();
+    if actor.is_empty() {
+        return Err(Error::Approval(ApprovalError::Invalid(
+            "revoker (actor) must not be empty".into(),
+        )));
+    }
+    let note = note.trim();
+    if note.is_empty() {
+        return Err(Error::Approval(ApprovalError::Invalid(
+            "a revoke needs a note saying why".into(),
+        )));
+    }
+    check_len("note", note, MAX_NOTE_CHARS)?;
+    let mut conn = db.get()?;
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let current = get_in_conn(&tx, id)?;
+    let superseded_by = match superseded_by.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(other) => {
+            let replacement = get_in_conn(&tx, other)?;
+            if replacement.uuid == current.uuid {
+                return Err(Error::Approval(ApprovalError::Invalid(format!(
+                    "{} cannot supersede itself",
+                    current.ap_id()
+                ))));
+            }
+            Some(replacement.ap_id())
+        }
+        None => None,
+    };
+    if current.status != "approved" {
+        let hint = if current.status == "pending" {
+            " (reject or withdraw a pending request instead)"
+        } else {
+            ""
+        };
+        return Err(Error::Approval(ApprovalError::Conflict(format!(
+            "{} is {}, not approved{hint}",
+            current.ap_id(),
+            current.status
+        ))));
+    }
+    if current.consumed_at.is_some() {
+        return Err(Error::Approval(ApprovalError::AlreadyConsumed));
+    }
+    if same_actor(&current.requester, actor) {
+        return Err(Error::Approval(ApprovalError::Forbidden(
+            "the requester cannot revoke their own approval; only the operator can".into(),
+        )));
+    }
+    let now = dates::format_iso(&dates::now_in_operator_tz()?);
+    let stored_note = match &superseded_by {
+        Some(other) => format!("superseded by {other}: {note}"),
+        None => note.to_string(),
+    };
+    tx.execute(
+        "UPDATE approvals SET status = 'revoked', revoked_at = ?1, revoked_by = ?2, revoke_note = ?3
+         WHERE id = ?4 AND status = 'approved' AND consumed_at IS NULL",
+        params![now, actor, stored_note, current.uuid],
+    )?;
+    if tx.changes() != 1 {
+        return Err(Error::Approval(ApprovalError::Conflict(format!(
+            "{} changed while revoking; re-check it",
+            current.ap_id()
+        ))));
+    }
+    record_event(
+        &tx,
+        ctx,
+        &current.uuid,
+        "approval.revoked",
+        serde_json::json!({
+            "approval_id": current.ap_id(),
+            "via": via.as_str(),
+            "superseded_by": superseded_by,
+        }),
+    )?;
+    if let Some(j) = Journal::from_env() {
+        j.append("revoke", &claim_of(&current), actor, &now)?;
     }
     tx.commit()?;
     get(db, &current.uuid)
@@ -2303,5 +2428,158 @@ mod tests {
             render_preview(Some(&[0xff, 0x00]), Some("file"), true),
             "<binary 2 bytes>"
         );
+    }
+
+    fn revoke_as(db: &Db, id: &str, actor: &str, note: &str) -> Result<Approval> {
+        revoke(db, id, DecidedVia::Cli, note, None, &ctx(actor))
+    }
+
+    #[test]
+    fn revoked_approval_is_out_of_force_and_every_gate_refuses_it() {
+        let (_d, db) = fresh();
+        let id = raw_row(&db, 90, "approved", "2999-01-01T00:00:00Z", b"rv");
+        assert!(get(&db, &id).unwrap().in_force());
+        let ap = revoke_as(&db, &id, "operator", "superseded scripts").unwrap();
+        assert_eq!(ap.status, "revoked");
+        assert_eq!(ap.revoked_by.as_deref(), Some("operator"));
+        assert_eq!(ap.revoke_note.as_deref(), Some("superseded scripts"));
+        assert!(ap.revoked_at.is_some());
+        assert!(ap.consumed_at.is_none());
+        // The decision itself is kept as made.
+        assert_eq!(ap.decided_by.as_deref(), Some("operator"));
+        assert!(!ap.in_force());
+        assert_eq!(ap.to_json(None)["status"], serde_json::json!("revoked"));
+        assert_eq!(exit_code(payload_bytes(&db, &id)), 4);
+        assert_eq!(exit_code(verify(&db, &id, &file_src(b"rv"))), 4);
+        assert_eq!(exit_code(consume(&db, &id, &file_src(b"rv"), &ctx("x"))), 4);
+        assert!(get(&db, &id).unwrap().consumed_at.is_none(), "no latch");
+        let listed = list(&db, Some("revoked")).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].ap_id(), "AP-90");
+        let events = events(&db, &ap.uuid).unwrap();
+        assert!(events.iter().any(|e| e.event_type == "approval.revoked"));
+    }
+
+    #[test]
+    fn revoke_refuses_rows_that_are_not_approved_and_unconsumed() {
+        let (_d, db) = fresh();
+        let pending = raw_row(&db, 91, "pending", "2999-01-01T00:00:00Z", b"p");
+        let rejected = raw_row(&db, 92, "rejected", "2999-01-01T00:00:00Z", b"r");
+        let spent = raw_row(&db, 93, "approved", "2999-01-01T00:00:00Z", b"c");
+        consume(&db, &spent, &file_src(b"c"), &ctx("x")).unwrap();
+        let twice = raw_row(&db, 94, "approved", "2999-01-01T00:00:00Z", b"t");
+        revoke_as(&db, &twice, "operator", "first").unwrap();
+        for (id, why) in [
+            (&pending, "pending"),
+            (&rejected, "rejected"),
+            (&twice, "revoked"),
+        ] {
+            let err = revoke_as(&db, id, "operator", "no")
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(why) && err.contains("not approved"),
+                "{id}: {err}"
+            );
+        }
+        assert!(matches!(
+            revoke_as(&db, &spent, "operator", "too late"),
+            Err(Error::Approval(ApprovalError::AlreadyConsumed))
+        ));
+        assert_eq!(get(&db, &pending).unwrap().status, "pending");
+        assert_eq!(get(&db, &rejected).unwrap().status, "rejected");
+        assert!(get(&db, &spent).unwrap().consumed_at.is_some());
+    }
+
+    #[test]
+    fn revoke_needs_an_operator_and_a_reason() {
+        let (_d, db) = fresh();
+        let id = raw_row(&db, 95, "approved", "2999-01-01T00:00:00Z", b"o");
+        // raw_row's requester is "hal": the requester cannot revoke.
+        assert!(matches!(
+            revoke_as(&db, &id, "HAL", "mine"),
+            Err(Error::Approval(ApprovalError::Forbidden(_)))
+        ));
+        assert!(matches!(
+            revoke_as(&db, &id, "operator", "   "),
+            Err(Error::Approval(ApprovalError::Invalid(_)))
+        ));
+        assert!(matches!(
+            revoke_as(&db, &id, "  ", "why"),
+            Err(Error::Approval(ApprovalError::Invalid(_)))
+        ));
+        assert_eq!(get(&db, &id).unwrap().status, "approved");
+    }
+
+    #[test]
+    fn an_expired_approval_can_still_be_revoked() {
+        let (_d, db) = fresh();
+        let id = approved_past_expiry(&db, b"late");
+        assert_eq!(
+            revoke_as(&db, &id, "operator", "tidy").unwrap().status,
+            "revoked"
+        );
+    }
+
+    #[test]
+    fn superseded_by_names_another_existing_row() {
+        let (_d, db) = fresh();
+        let old = raw_row(&db, 96, "approved", "2999-01-01T00:00:00Z", b"old");
+        let new = raw_row(&db, 97, "approved", "2999-01-01T00:00:00Z", b"new");
+        let by = |other: &str| {
+            revoke(
+                &db,
+                &old,
+                DecidedVia::Cli,
+                "re-filed",
+                Some(other),
+                &ctx("operator"),
+            )
+        };
+        assert!(matches!(
+            by(&old),
+            Err(Error::Approval(ApprovalError::Invalid(_)))
+        ));
+        assert!(matches!(
+            by("AP-9999"),
+            Err(Error::Approval(ApprovalError::NotFound(_)))
+        ));
+        let ap = by(&new).unwrap();
+        assert_eq!(
+            ap.revoke_note.as_deref(),
+            Some("superseded by AP-97: re-filed")
+        );
+        assert_eq!(
+            get(&db, &new).unwrap().status,
+            "approved",
+            "the replacement is untouched"
+        );
+    }
+
+    #[test]
+    fn the_trigger_keeps_a_revoked_row_frozen() {
+        let (_d, db) = fresh();
+        let id = raw_row(&db, 98, "approved", "2999-01-01T00:00:00Z", b"f");
+        revoke_as(&db, &id, "operator", "frozen").unwrap();
+        for sql in [
+            "UPDATE approvals SET status = 'approved' WHERE seq = 98",
+            "UPDATE approvals SET consumed_at = 'x', consumed_by = 'y' WHERE seq = 98",
+            "UPDATE approvals SET revoke_note = 'edited' WHERE seq = 98",
+        ] {
+            let r = db.with_conn(|c| Ok(c.execute(sql, [])?));
+            assert!(r.is_err(), "{sql} must be refused");
+        }
+        // An approved row cannot be half-revoked or revoked while consumed.
+        raw_row(&db, 99, "approved", "2999-01-01T00:00:00Z", b"g");
+        for sql in [
+            "UPDATE approvals SET status = 'revoked' WHERE seq = 99",
+            "UPDATE approvals SET status = 'revoked', revoked_at = 'now', revoked_by = 'op',
+                    consumed_at = 'x', consumed_by = 'y' WHERE seq = 99",
+            "UPDATE approvals SET revoked_at = 'now', revoked_by = 'op' WHERE seq = 99",
+        ] {
+            let r = db.with_conn(|c| Ok(c.execute(sql, [])?));
+            assert!(r.is_err(), "{sql} must be refused");
+        }
+        assert_eq!(get(&db, "AP-99").unwrap().status, "approved");
     }
 }

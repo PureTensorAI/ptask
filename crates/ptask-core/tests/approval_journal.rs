@@ -709,3 +709,50 @@ fn verify_of_missing_journal_is_an_error_not_zero_records() {
         "a missing journal must not verify green"
     );
 }
+
+/// A revoke is journaled and cancels the approve: a revoked row edited back
+/// to `approved` straight in SQLite (trigger dropped) still does not verify
+/// or consume in enforce mode.
+#[test]
+fn revoked_approval_stays_refused_even_if_the_row_is_edited_back() {
+    let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    let s = setup(Some("enforce"));
+    let ap = request(&s.db, Some("1h"));
+    approve(&s.db, &ap.ap_id());
+    approvals::revoke(
+        &s.db,
+        &ap.ap_id(),
+        DecidedVia::Cli,
+        "superseded",
+        None,
+        &EventCtx::local("operator"),
+    )
+    .unwrap();
+    assert!(journal_evs(&s.journal).contains(&"revoke".to_string()));
+    assert!(matches!(
+        consume(&s.db, &ap.ap_id(), &digest()),
+        Err(Error::Approval(ApprovalError::Terminal(_)))
+    ));
+
+    let conn = rusqlite::Connection::open(s.db_path()).unwrap();
+    conn.execute_batch("DROP TRIGGER IF EXISTS approvals_lock_after_decision;")
+        .unwrap();
+    conn.execute(
+        "UPDATE approvals SET status = 'approved', revoked_at = NULL, revoked_by = NULL,
+                revoke_note = NULL",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let r = consume(&s.db, &ap.ap_id(), &digest());
+    assert!(
+        matches!(r, Err(Error::Approval(ApprovalError::Unverified(_)))),
+        "a journaled revoke must survive a SQLite edit: {r:?}"
+    );
+    let v = approvals::verify(&s.db, &ap.ap_id(), &PayloadSource::Digest(digest()));
+    assert!(
+        matches!(v, Err(Error::Approval(ApprovalError::Unverified(_)))),
+        "{v:?}"
+    );
+}
