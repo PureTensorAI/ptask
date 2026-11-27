@@ -204,7 +204,7 @@ fn approval_preview_cannot_spoof_the_bound_payload() {
     assert!(shown.contains("attacker@evil.example"), "{shown}");
     assert!(shown.contains("$50,000"), "{shown}");
     assert!(
-        shown.contains("pt approval payload AP-1 | cat -v"),
+        shown.contains("approval payload AP-1 | cat -v"),
         "a hazardous payload must carry the inspect warning:\n{shown}"
     );
 
@@ -228,7 +228,7 @@ fn approval_preview_cannot_spoof_the_bound_payload() {
         ],
     );
     assert!(!approved.contains('\x1b') && !approved.contains('\r'));
-    assert!(approved.contains("pt approval payload AP-1 | cat -v"));
+    assert!(approved.contains("approval payload AP-1 | cat -v"));
 
     // An ordinary CRLF email body with a tab does not cry wolf.
     let email = pt.dir.path().join("email.txt");
@@ -288,7 +288,7 @@ fn approval_preview_flags_invisible_characters() {
         "{shown}"
     );
     assert!(
-        shown.contains("pt approval payload AP-1 | cat -v"),
+        shown.contains("approval payload AP-1 | cat -v"),
         "{shown}"
     );
     // (Without --via the TTY guardrail answers first in a test; the --force
@@ -485,7 +485,7 @@ fn emoji_zwj_is_kept_in_titles_but_flagged_in_approval_previews() {
         "{shown}"
     );
     assert!(
-        shown.contains("pt approval payload AP-1 | cat -v"),
+        shown.contains("approval payload AP-1 | cat -v"),
         "{shown}"
     );
 }
@@ -534,7 +534,7 @@ fn variation_selector_smuggling_is_flagged_everywhere() {
     let shown = pt.ok_as("operator", &["--no-color", "approval", "show", "AP-1"]);
     assert!(!shown.chars().any(is_selector), "{shown:?}");
     assert!(
-        shown.contains("pt approval payload AP-1 | cat -v"),
+        shown.contains("approval payload AP-1 | cat -v"),
         "{shown}"
     );
     let out = pt.run_as("operator", &["approve", "AP-1", "--via", "dashboard"]);
