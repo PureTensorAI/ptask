@@ -207,9 +207,7 @@ pub const AGENT_ENV_VARS: &[&str] = &[
 
 /// True when the current process appears to be running inside an agent harness.
 pub fn is_agent_env() -> bool {
-    AGENT_ENV_VARS
-        .iter()
-        .any(|k| env_nonempty(k).is_some())
+    AGENT_ENV_VARS.iter().any(|k| env_nonempty(k).is_some())
 }
 
 impl Config {
