@@ -2582,4 +2582,72 @@ mod tests {
         }
         assert_eq!(get(&db, "AP-99").unwrap().status, "approved");
     }
+
+    #[test]
+    fn operator_shell_can_revoke_agent_filed_approval_and_agent_cannot_self_decide_or_revoke() {
+        // PT-3174: agent sessions without PTASK_ACTOR default to "hal" (never "shell"),
+        // so the operator's terminal (default "shell", no env override) can decide and revoke,
+        // while the agent ("hal") is still refused on its own request.
+        let (_d, db) = fresh();
+        let agent_ctx = EventCtx::local("hal");
+        let operator_ctx = EventCtx::local("shell");
+        let input = RequestInput {
+            kind: "destroy".into(),
+            title: "agent filed".into(),
+            request_note: None,
+            payload: file_src(b"{\"commands\":[\"kubectl delete pod/x\"]}"),
+            task_pt_id: None,
+            expires_in: None,
+        };
+        let ap = request(&db, input, &agent_ctx).unwrap().approval;
+        assert_eq!(ap.requester, "hal");
+
+        // Agent cannot decide its own request.
+        let err = decide(
+            &db,
+            &ap.ap_id(),
+            Decision::Approve,
+            DecidedVia::Dashboard,
+            None,
+            &agent_ctx,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Approval(ApprovalError::Forbidden(_))));
+
+        // Operator approves from default "shell" actor (no PTASK_ACTOR override).
+        decide(
+            &db,
+            &ap.ap_id(),
+            Decision::Approve,
+            DecidedVia::Cli,
+            Some("ok"),
+            &operator_ctx,
+        )
+        .unwrap();
+
+        // Agent still cannot revoke its own approved request.
+        let err = revoke(
+            &db,
+            &ap.ap_id(),
+            DecidedVia::Dashboard,
+            "self revoke",
+            None,
+            &agent_ctx,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::Approval(ApprovalError::Forbidden(_))));
+
+        // Operator revokes from default "shell" actor (no PTASK_ACTOR override).
+        let revoked = revoke(
+            &db,
+            &ap.ap_id(),
+            DecidedVia::Cli,
+            "superseded",
+            None,
+            &operator_ctx,
+        )
+        .unwrap();
+        assert_eq!(revoked.status, "revoked");
+        assert_eq!(revoked.revoked_by.as_deref(), Some("shell"));
+    }
 }

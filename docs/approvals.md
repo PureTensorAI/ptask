@@ -167,21 +167,21 @@ canonicalised identically to `request`.
 
 ## Authority rules
 
-Local CLI (`pt approve` / `pt reject` / `pt approval decide`):
+Local CLI (`ptask approve` / `ptask reject` / `ptask approval decide` — use `ptask` in an interactive shell on hosts where `pt` is aliased to the tool catalogue):
 
-- refused when `CLAUDECODE` is set and non-empty (even with `--via dashboard`)
+- refused when any agent-harness environment variable (`CLAUDECODE`, `CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `ANTIGRAVITY_AGENT`, `GEMINI_CLI`, `GROK_SESSION_ID`, `HAL_AGENT`) is set and non-empty (even with `--via dashboard`)
 - refused when stdin is not a TTY unless `--via dashboard`
 - `decided_via` is `cli` on a TTY, `dashboard` with `--via dashboard`
-- `decided_by` is `$PTASK_ACTOR`
+- `decided_by` is `$PTASK_ACTOR` (defaults to `shell` in an operator terminal, and to `hal` inside any agent harness when `$PTASK_ACTOR` is unset so agent-filed requests never collide with `shell`)
 - the requester cannot decide their own request; actor names compare
   trimmed and ASCII case-insensitively (`HAL` is `hal`), here and for
   withdraw-own-rows
 - approve (not reject) refuses without `--force` when the payload preview
   holds control, bidi or invisible characters (a zero-width space in an
   address, tag characters after an amount): the digest binds the stored
-  bytes, not what a screen shows. `pt approval show` marks them as U+FFFD
+  bytes, not what a screen shows. `ptask approval show` marks them as U+FFFD
   under a warning; inspect the exact bytes with
-  `pt approval payload AP-n | cat -v`, then `pt approve AP-n --force`. The
+  `ptask approval payload AP-n | cat -v`, then `ptask approve AP-n --force`. The
   refusal exits **7**. The dashboard sidecar path (`--via dashboard`) is
   gated the same way and never forces: the sidecar answers 409
   `{"code": "payload_flagged"}` with pt's message plus "approve from the CLI
@@ -208,7 +208,7 @@ expired; the only way to retire one whose payload had been superseded was to
 spend it with an unused `consume`. `revoke` takes it back instead:
 
 ```sh
-pt approval revoke AP-145 --note "pre-review scripts" --superseded-by AP-178
+ptask approval revoke AP-145 --note "pre-review scripts" --superseded-by AP-178
 ```
 
 - Only an **approved, unconsumed** row can be revoked, expired or not. A

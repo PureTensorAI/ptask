@@ -320,7 +320,7 @@ fn print_human(ap: &approvals::Approval, events: Option<&[approvals::ApprovalEve
             ui::pill(
                 ui::Status::Bad,
                 &format!(
-                    "WARNING: payload has control, bidi or invisible characters (shown as \u{FFFD}) — run `pt approval payload {} | cat -v` before deciding",
+                    "WARNING: payload has control, bidi or invisible characters (shown as \u{FFFD}) — run `ptask approval payload {} | cat -v` before deciding",
                     ap.ap_id()
                 )
             )
@@ -354,10 +354,7 @@ fn print_human(ap: &approvals::Approval, events: Option<&[approvals::ApprovalEve
 }
 
 fn inspect_guardrails() -> Result<()> {
-    let claudecode = std::env::var("CLAUDECODE")
-        .ok()
-        .is_some_and(|s| !s.is_empty());
-    if claudecode || !std::io::stdin().is_terminal() {
+    if ptask_core::config::is_agent_env() || !std::io::stdin().is_terminal() {
         return Err(ExitCodeError {
             code: 1,
             message: "--any-status is operator inspection and needs an operator TTY; \
@@ -370,10 +367,7 @@ fn inspect_guardrails() -> Result<()> {
 }
 
 fn decide_guardrails(via_dashboard: bool) -> Result<DecidedVia> {
-    let claudecode = std::env::var("CLAUDECODE")
-        .ok()
-        .is_some_and(|s| !s.is_empty());
-    if claudecode {
+    if ptask_core::config::is_agent_env() {
         return Err(ExitCodeError {
             code: 1,
             message: "approval decisions are reserved for the operator".into(),
@@ -641,7 +635,7 @@ fn refuse_hazardous_preview(db: &Db, id: &str) -> Result<()> {
             code: EXIT_PAYLOAD_FLAGGED,
             message: format!(
                 "{0}: the payload preview has control, bidi or invisible characters; \
-                 inspect the exact bytes with `pt approval payload {0} | cat -v`, \
+                 inspect the exact bytes with `ptask approval payload {0} | cat -v`, \
                  then approve with --force",
                 ap.ap_id()
             ),

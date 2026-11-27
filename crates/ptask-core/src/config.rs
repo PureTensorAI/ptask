@@ -190,6 +190,28 @@ impl DispatchCfg {
     }
 }
 
+/// Environment variables set by agent harnesses (Claude Code, Codex,
+/// Antigravity, Gemini CLI, Grok, HAL seats). When any is non-empty and
+/// `PTASK_ACTOR` is unset, CLI invocations default to `"hal"` instead of
+/// `"shell"` so agent-filed approvals never collide with the operator's
+/// interactive terminal in `same_actor` checks (PT-3174).
+pub const AGENT_ENV_VARS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_SESSION_ID",
+    "CODEX_THREAD_ID",
+    "ANTIGRAVITY_AGENT",
+    "GEMINI_CLI",
+    "GROK_SESSION_ID",
+    "HAL_AGENT",
+];
+
+/// True when the current process appears to be running inside an agent harness.
+pub fn is_agent_env() -> bool {
+    AGENT_ENV_VARS
+        .iter()
+        .any(|k| env_nonempty(k).is_some())
+}
+
 impl Config {
     /// Read the full configuration from the process environment. Call once
     /// per binary, at the entrypoint.
@@ -209,7 +231,13 @@ impl Config {
             .or_else(|| domains.first().map(|d| d.key.clone()));
         Config {
             db_path: env_db_path(),
-            actor: env_nonempty("PTASK_ACTOR").unwrap_or_else(|| "shell".into()),
+            actor: env_nonempty("PTASK_ACTOR").unwrap_or_else(|| {
+                if is_agent_env() {
+                    "hal".into()
+                } else {
+                    "shell".into()
+                }
+            }),
             mcp_actor: env_nonempty("PTASK_MCP_ACTOR")
                 .or_else(|| env_nonempty("PTASK_ACTOR"))
                 .unwrap_or_else(|| "mcp".into()),
@@ -537,8 +565,15 @@ mod tests {
             .get_or_init(|| std::sync::Mutex::new(()))
             .lock()
             .unwrap();
+        let saved: Vec<(&str, Option<String>)> = AGENT_ENV_VARS
+            .iter()
+            .map(|&k| (k, std::env::var(k).ok()))
+            .collect();
         unsafe {
             std::env::remove_var("PTASK_ACTOR");
+            for &k in AGENT_ENV_VARS {
+                std::env::remove_var(k);
+            }
         }
         let cfg = Config::from_env();
         assert_eq!(
@@ -561,9 +596,21 @@ mod tests {
             (cfg.actor.as_str(), cfg.mcp_actor.as_str()),
             ("shell", "agent7")
         );
+        // PT-3174: an agent session without PTASK_ACTOR must default to "hal", never "shell".
         unsafe {
             std::env::remove_var("PTASK_ACTOR");
             std::env::remove_var("PTASK_MCP_ACTOR");
+            std::env::set_var("CLAUDECODE", "1");
+        }
+        let cfg = Config::from_env();
+        assert_eq!(cfg.actor.as_str(), "hal");
+        unsafe {
+            for (k, v) in saved {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
         }
     }
 
