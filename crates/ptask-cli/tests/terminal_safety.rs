@@ -287,10 +287,7 @@ fn approval_preview_flags_invisible_characters() {
         shown.contains("alice@exa\u{fffd}mple.com amount 10\u{fffd}\u{fffd}"),
         "{shown}"
     );
-    assert!(
-        shown.contains("approval payload AP-1 | cat -v"),
-        "{shown}"
-    );
+    assert!(shown.contains("approval payload AP-1 | cat -v"), "{shown}");
     // (Without --via the TTY guardrail answers first in a test; the --force
     // gate runs on both paths.)
     let out = pt.run_as("operator", &["approve", "AP-1", "--via", "dashboard"]);
@@ -484,10 +481,7 @@ fn emoji_zwj_is_kept_in_titles_but_flagged_in_approval_previews() {
         shown.contains("pay the 👨\u{fffd}👩\u{fffd}👧 account"),
         "{shown}"
     );
-    assert!(
-        shown.contains("approval payload AP-1 | cat -v"),
-        "{shown}"
-    );
+    assert!(shown.contains("approval payload AP-1 | cat -v"), "{shown}");
 }
 
 /// The reviewer's "emoji smuggling" payload: a hidden instruction encoded
@@ -533,10 +527,7 @@ fn variation_selector_smuggling_is_flagged_everywhere() {
     );
     let shown = pt.ok_as("operator", &["--no-color", "approval", "show", "AP-1"]);
     assert!(!shown.chars().any(is_selector), "{shown:?}");
-    assert!(
-        shown.contains("approval payload AP-1 | cat -v"),
-        "{shown}"
-    );
+    assert!(shown.contains("approval payload AP-1 | cat -v"), "{shown}");
     let out = pt.run_as("operator", &["approve", "AP-1", "--via", "dashboard"]);
     assert_eq!(out.status.code(), Some(7));
 
